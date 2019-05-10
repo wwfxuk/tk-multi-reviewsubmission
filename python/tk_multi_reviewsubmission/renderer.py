@@ -68,7 +68,6 @@ class Renderer(object):
         :param color_space: Colorspace of the input frames
         """
         output_node = None
-        ctx = self.__app.context
 
         # create group where everything happens
         group = nuke.nodes.Group()
@@ -84,53 +83,15 @@ class Renderer(object):
             if color_space:
                 read["colorspace"].setValue(color_space)
 
-            # now create the slate/burnin node
-            burn = nuke.nodePaste(self._burnin_nk)
+            burn = self.__create_slate_burn_ins(name, version,
+                                                first_frame, last_frame)
             burn.setInput(0, read)
-
-            # set the fonts for all text fields
-            burn.node("top_left_text")["font"].setValue(self._font)
-            burn.node("top_right_text")["font"].setValue(self._font)
-            burn.node("bottom_left_text")["font"].setValue(self._font)
-            burn.node("framecounter")["font"].setValue(self._font)
-            burn.node("slate_info")["font"].setValue(self._font)
-
-            # add the logo
-            burn.node("logo")["file"].setValue(self._logo)
-
-            # format the burnins
-            padding = self.__app.get_setting("version_number_padding")
-            version_str = "v{ver:0>{pad}}".format(ver=version, pad=padding)
-
-            if ctx.task:
-                version_label = "%s, %s" % (ctx.task["name"], version_str)
-            elif ctx.step:
-                version_label = "%s, %s" % (ctx.step["name"], version_str)
-            else:
-                version_label = version_str
-
-            burn.node("top_left_text")["message"].setValue(ctx.project["name"])
-            burn.node("top_right_text")["message"].setValue(ctx.entity["name"])
-            burn.node("bottom_left_text")["message"].setValue(version_label)
-
-            # and the slate
-            slate_str = "Project: %s\n" % ctx.project["name"]
-            slate_str += "%s: %s\n" % (ctx.entity["type"], ctx.entity["name"])
-            slate_str += "Name: %s\n" % name.capitalize()
-            slate_str += "Version: %s\n" % version_str
-
-            if ctx.task:
-                slate_str += "Task: %s\n" % ctx.task["name"]
-            elif ctx.step:
-                slate_str += "Step: %s\n" % ctx.step["name"]
-
-            slate_str += "Frames: %s - %s\n" % (first_frame, last_frame)
-
-            burn.node("slate_info")["message"].setValue(slate_str)
 
             # create a scale node
             scale = self.__create_scale_node(width, height)
             scale.setInput(0, burn)
+            if not self.__app.get_setting("resize_movie"):
+                scale['disable'].setValue(True)
 
             # Create the output node
             output_node = self.__create_output_node(output_path)
@@ -152,6 +113,80 @@ class Renderer(object):
 
         # Cleanup after ourselves
         nuke.delete(group)
+
+    def __create_slate_burn_ins(self, name, version, first_frame, last_frame):
+        """
+        Paste and setup burn-ins and slate nodes in a group.
+
+        :param name:        Name to use in the slate for the output movie
+        :param version:     Version number to use for the output movie slate
+                            and burn-in
+        :param first_frame: Start frame for the output movie
+        :param last_frame:  End frame for the output movie
+        :return:            Group node containing configured nodes.
+        :rtype:             nuke.Group
+        """
+        ctx = self.__app.context
+
+        # now create the slate/burnin node
+        burn_in = nuke.nodePaste(self._burnin_nk)
+
+        # set the fonts for all text fields
+        burn_in.node("top_left_text")["font"].setValue(self._font)
+        burn_in.node("top_right_text")["font"].setValue(self._font)
+        burn_in.node("bottom_left_text")["font"].setValue(self._font)
+        burn_in.node("framecounter")["font"].setValue(self._font)
+        burn_in.node("slate_info")["font"].setValue(self._font)
+
+        # add the slate logo
+        burn_in.node("logo")["file"].setValue(self._logo)
+
+        # format the burnins
+        padding = self.__app.get_setting("version_number_padding")
+        version_str = "v{ver:0>{pad}}".format(ver=version, pad=padding)
+
+        if ctx.task:
+            version_label = "%s, %s" % (ctx.task["name"], version_str)
+        elif ctx.step:
+            version_label = "%s, %s" % (ctx.step["name"], version_str)
+        else:
+            version_label = version_str
+
+        burn_in.node("top_left_text")["message"].setValue(ctx.project["name"])
+        burn_in.node("top_right_text")["message"].setValue(ctx.entity["name"])
+        burn_in.node("bottom_left_text")["message"].setValue(version_label)
+
+        # and the slate
+        slate_str = "Project: %s\n" % ctx.project["name"]
+        slate_str += "%s: %s\n" % (ctx.entity["type"], ctx.entity["name"])
+        slate_str += "Name: %s\n" % name.capitalize()
+        slate_str += "Version: %s\n" % version_str
+
+        if ctx.task:
+            slate_str += "Task: %s\n" % ctx.task["name"]
+        elif ctx.step:
+            slate_str += "Step: %s\n" % ctx.step["name"]
+
+        slate_str += "Frames: %s - %s\n" % (first_frame, last_frame)
+
+        burn_in.node("slate_info")["message"].setValue(slate_str)
+
+        # Disable slate expression if not using it
+        if not self.__app.get_setting("add_slate"):
+            chooser_knob = burn_in.node('slate_or_burnin_chooser')['which']
+            chooser_knob.setExpression('')
+            chooser_knob.clearAnimated()
+            chooser_knob.setValue(1)
+
+        # Disable burn in texts if not using it
+        if not self.__app.get_setting("add_burn_ins"):
+            for node_name in ["top_left_text",
+                              "top_right_text",
+                              "bottom_left_text",
+                              "framecounter"]:
+                burn_in.node(node_name)['disable'].setValue(True)
+
+        return burn_in
 
     def __create_scale_node(self, width, height):
         """
