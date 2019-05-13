@@ -105,9 +105,12 @@ class Renderer(object):
             self.__app.ensure_folder_exists(output_folder)
 
             # Render the outputs, first view only
+            if self.__app.get_setting("add_slate"):
+                first_frame -= 1
+
             nuke.executeMultiple(
                 [output_node],
-                ([first_frame-1, last_frame, 1],),
+                ([first_frame, last_frame, 1],),
                 [nuke.views()[0]],
             )
 
